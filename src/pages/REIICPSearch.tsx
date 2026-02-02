@@ -1,7 +1,20 @@
 import { useState } from 'react';
-import { Search, Users, Building2, Home, Landmark, Briefcase, Loader2, ExternalLink } from 'lucide-react';
-import { REI_ICP_CONFIG, REI_STRATEGIES, US_STATES, type REIICPType, type REIStrategyId } from '../lib/rei-icp-config';
-import { useREIICPExecute, useREIICPProspects, type Prospect } from '../hooks/useREIICPSearch';
+import { Target, Play, Loader2, Users, Building2, Home, Landmark, Briefcase, ExternalLink, Info } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+// Select components available if needed
+// import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Slider } from '@/components/ui/slider';
+import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
+import { REI_ICP_CONFIG, REI_STRATEGIES, US_STATES, type REIICPType, type REIStrategyId } from '@/lib/rei-icp-config';
+import { useREIICPExecute, useREIICPProspects, type Prospect } from '@/hooks/useREIICPSearch';
+import { toast } from 'sonner';
 
 const ICP_ICONS: Record<REIICPType, typeof Users> = {
   wholesaler: Briefcase,
@@ -10,6 +23,12 @@ const ICP_ICONS: Record<REIICPType, typeof Users> = {
   agent: Users,
   institutional: Landmark
 };
+
+// ICP colors for future use
+// const ICP_COLORS: Record<REIICPType, string> = {
+//   wholesaler: 'bg-blue-500', flipper: 'bg-orange-500',
+//   buy_hold: 'bg-green-500', agent: 'bg-purple-500', institutional: 'bg-amber-500'
+// };
 
 export default function REIICPSearch() {
   const [selectedICPs, setSelectedICPs] = useState<REIICPType[]>([]);
@@ -38,14 +57,17 @@ export default function REIICPSearch() {
     }
   };
 
-  const handleStateToggle = (state: string) => {
+  const toggleState = (state: string) => {
     setSelectedStates(prev =>
       prev.includes(state) ? prev.filter(s => s !== state) : [...prev, state]
     );
   };
 
   const handleSearch = () => {
-    if (selectedICPs.length === 0 || selectedStates.length === 0) return;
+    if (selectedICPs.length === 0 || selectedStates.length === 0) {
+      toast.error('Please select at least one ICP and one state');
+      return;
+    }
 
     executeMutation.mutate({
       icps: selectedICPs,
@@ -54,270 +76,375 @@ export default function REIICPSearch() {
       strategy,
       results_per_icp: resultsPerIcp
     }, {
-      onSuccess: () => {
+      onSuccess: (data) => {
+        toast.success(`Search completed! Found ${data.total_kept} prospects.`);
         refetch();
+      },
+      onError: (error) => {
+        toast.error(error.message || 'Search failed');
       }
     });
   };
 
-  const getConfidenceBadgeColor = (confidence: string | null) => {
+  const getConfidenceBadgeVariant = (confidence: string | null) => {
     switch (confidence) {
-      case 'high': return 'bg-green-100 text-green-800';
-      case 'medium': return 'bg-yellow-100 text-yellow-800';
-      case 'low': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
+      case 'high': return 'default';
+      case 'medium': return 'secondary';
+      case 'low': return 'outline';
+      default: return 'outline';
     }
   };
 
-  const getIntentHeatBadgeColor = (heat: string | null) => {
+  const getIntentHeatColor = (heat: string | null) => {
     switch (heat) {
-      case 'hot': return 'bg-red-100 text-red-800';
-      case 'warm': return 'bg-orange-100 text-orange-800';
-      case 'cold': return 'bg-blue-100 text-blue-800';
-      default: return 'bg-gray-100 text-gray-800';
+      case 'hot': return 'bg-red-500';
+      case 'warm': return 'bg-orange-500';
+      case 'cold': return 'bg-blue-500';
+      default: return 'bg-gray-500';
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-6 py-4">
-        <h1 className="text-2xl font-bold text-gray-900">REI ICP Prospect Search</h1>
-        <p className="text-gray-500 mt-1">Find real estate investor prospects by ICP type</p>
-      </header>
+    <TooltipProvider>
+      <div className="container mx-auto p-6 max-w-6xl">
+        {/* Header */}
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold flex items-center gap-3">
+            <Target className="h-8 w-8 text-blue-500" />
+            REI ICP Prospect Search
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Find real estate investor prospects by ICP type using AI-powered search
+          </p>
+        </div>
 
-      <div className="p-6">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column - Search Form */}
-          <div className="lg:col-span-1 space-y-6">
+        <div className="grid gap-6 lg:grid-cols-3">
+          {/* Left Column - Main Controls */}
+          <div className="lg:col-span-2 space-y-6">
             {/* ICP Selection */}
-            <div className="bg-white rounded-lg border border-gray-200 p-4">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="font-semibold text-gray-900">Select ICPs</h2>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={batchMode}
-                    onChange={handleBatchToggle}
-                    className="rounded border-gray-300"
+            <Card className="border-blue-200 dark:border-blue-800">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Target className="h-5 w-5 text-blue-500" />
+                  Select ICPs
+                </CardTitle>
+                <CardDescription>
+                  Choose which Ideal Customer Profiles to search for
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      id="batch-mode"
+                      checked={batchMode}
+                      onCheckedChange={handleBatchToggle}
+                    />
+                    <Label htmlFor="batch-mode">Batch Mode (All 5 ICPs)</Label>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {(Object.entries(REI_ICP_CONFIG) as [REIICPType, typeof REI_ICP_CONFIG.wholesaler][]).map(([id, config]) => {
+                    const Icon = ICP_ICONS[id];
+                    const isSelected = selectedICPs.includes(id);
+                    return (
+                      <Button
+                        key={id}
+                        variant={isSelected ? 'default' : 'outline'}
+                        className={`h-auto py-3 flex-col gap-1 ${batchMode ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        onClick={() => handleICPToggle(id)}
+                        disabled={batchMode}
+                      >
+                        <Icon className="h-5 w-5" />
+                        <span className="text-sm font-medium">{config.label}</span>
+                      </Button>
+                    );
+                  })}
+                </div>
+
+                {selectedICPs.length > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {selectedICPs.map(icp => (
+                      <Badge key={icp} variant="secondary" className="gap-1">
+                        {REI_ICP_CONFIG[icp].label}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Geographic Scope */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Geographic Scope</CardTitle>
+                <CardDescription>
+                  Select states and optionally specify a city
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm text-muted-foreground">
+                      States ({selectedStates.length} selected)
+                    </Label>
+                    {selectedStates.length > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSelectedStates([])}
+                        className="text-xs h-6"
+                      >
+                        Clear all
+                      </Button>
+                    )}
+                  </div>
+                  <ScrollArea className="h-40 rounded-md border p-2">
+                    <div className="flex flex-wrap gap-1.5">
+                      {US_STATES.map(state => (
+                        <Button
+                          key={state}
+                          variant={selectedStates.includes(state) ? 'default' : 'outline'}
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => toggleState(state)}
+                        >
+                          {state}
+                        </Button>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>City (Optional)</Label>
+                  <Input
+                    value={city}
+                    onChange={e => setCity(e.target.value)}
+                    placeholder="e.g., Houston, Dallas, Austin"
                   />
-                  <span>Batch (All 5)</span>
-                </label>
-              </div>
+                  <p className="text-xs text-muted-foreground">
+                    Adding a city narrows down the search to that specific area
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
 
-              <div className="grid grid-cols-2 gap-2">
-                {(Object.entries(REI_ICP_CONFIG) as [REIICPType, typeof REI_ICP_CONFIG.wholesaler][]).map(([id, config]) => {
-                  const Icon = ICP_ICONS[id];
-                  const isSelected = selectedICPs.includes(id);
-                  return (
-                    <button
-                      key={id}
-                      onClick={() => handleICPToggle(id)}
-                      disabled={batchMode}
-                      className={`flex items-center gap-2 p-3 rounded-lg border text-left transition-colors ${
-                        isSelected
-                          ? 'bg-blue-50 border-blue-300 text-blue-700'
-                          : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
-                      } ${batchMode ? 'opacity-50 cursor-not-allowed' : ''}`}
+            {/* Search Strategy */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  Search Strategy
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="h-4 w-4 text-muted-foreground" />
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p>Different strategies optimize for different goals - coverage, precision, or fresh results.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-3">
+                  {REI_STRATEGIES.map(s => (
+                    <div
+                      key={s.id}
+                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                        strategy === s.id
+                          ? 'bg-primary/5 border-primary'
+                          : 'hover:bg-muted/50'
+                      }`}
+                      onClick={() => setStrategy(s.id)}
                     >
-                      <Icon className="w-4 h-4" />
-                      <span className="text-sm font-medium">{config.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* State Selection */}
-            <div className="bg-white rounded-lg border border-gray-200 p-4">
-              <h2 className="font-semibold text-gray-900 mb-4">Select States</h2>
-              <div className="max-h-48 overflow-y-auto">
-                <div className="grid grid-cols-2 gap-1">
-                  {US_STATES.map(state => (
-                    <label key={state} className="flex items-center gap-2 p-1.5 hover:bg-gray-50 rounded cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={selectedStates.includes(state)}
-                        onChange={() => handleStateToggle(state)}
-                        className="rounded border-gray-300"
+                      <Checkbox
+                        checked={strategy === s.id}
+                        className="mt-0.5"
                       />
-                      <span className="text-sm text-gray-700">{state}</span>
-                    </label>
+                      <div>
+                        <div className="font-medium">{s.label}</div>
+                        <div className="text-sm text-muted-foreground">{s.description}</div>
+                      </div>
+                    </div>
                   ))}
                 </div>
-              </div>
-            </div>
+              </CardContent>
+            </Card>
+          </div>
 
-            {/* City Input */}
-            <div className="bg-white rounded-lg border border-gray-200 p-4">
-              <h2 className="font-semibold text-gray-900 mb-4">City (Optional)</h2>
-              <input
-                type="text"
-                value={city}
-                onChange={e => setCity(e.target.value)}
-                placeholder="e.g., Houston, Dallas"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
-
-            {/* Strategy Selection */}
-            <div className="bg-white rounded-lg border border-gray-200 p-4">
-              <h2 className="font-semibold text-gray-900 mb-4">Search Strategy</h2>
-              <div className="space-y-2">
-                {REI_STRATEGIES.map(s => (
-                  <label key={s.id} className="flex items-start gap-3 p-2 hover:bg-gray-50 rounded cursor-pointer">
-                    <input
-                      type="radio"
-                      name="strategy"
-                      value={s.id}
-                      checked={strategy === s.id}
-                      onChange={() => setStrategy(s.id)}
-                      className="mt-1"
-                    />
-                    <div>
-                      <div className="font-medium text-gray-900">{s.label}</div>
-                      <div className="text-sm text-gray-500">{s.description}</div>
-                    </div>
-                  </label>
-                ))}
-              </div>
-            </div>
+          {/* Right Column - Summary & Actions */}
+          <div className="space-y-6">
+            {/* Search Summary */}
+            <Card className="bg-muted/30">
+              <CardHeader>
+                <CardTitle className="text-lg">Search Summary</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">ICPs Selected</span>
+                  <span className="font-medium">{selectedICPs.length}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">States</span>
+                  <span className="font-medium">{selectedStates.length}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">City Filter</span>
+                  <span className="font-medium">{city || 'None'}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Strategy</span>
+                  <span className="font-medium">{REI_STRATEGIES.find(s => s.id === strategy)?.label}</span>
+                </div>
+              </CardContent>
+            </Card>
 
             {/* Results Per ICP */}
-            <div className="bg-white rounded-lg border border-gray-200 p-4">
-              <h2 className="font-semibold text-gray-900 mb-4">Results Per ICP: {resultsPerIcp}</h2>
-              <input
-                type="range"
-                min="10"
-                max="100"
-                step="10"
-                value={resultsPerIcp}
-                onChange={e => setResultsPerIcp(Number(e.target.value))}
-                className="w-full"
-              />
-              <div className="flex justify-between text-xs text-gray-500 mt-1">
-                <span>10</span>
-                <span>100</span>
-              </div>
-            </div>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Results Per ICP</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="text-center">
+                  <span className="text-3xl font-bold">{resultsPerIcp}</span>
+                  <span className="text-muted-foreground ml-1">prospects</span>
+                </div>
+                <Slider
+                  value={[resultsPerIcp]}
+                  onValueChange={([v]) => setResultsPerIcp(v)}
+                  min={10}
+                  max={100}
+                  step={10}
+                />
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>10</span>
+                  <span>100</span>
+                </div>
+                <p className="text-xs text-muted-foreground text-center">
+                  Total: ~{selectedICPs.length * resultsPerIcp} prospects max
+                </p>
+              </CardContent>
+            </Card>
 
-            {/* Search Button */}
-            <button
+            {/* Start Search Button */}
+            <Button
+              size="lg"
+              className="w-full"
               onClick={handleSearch}
               disabled={selectedICPs.length === 0 || selectedStates.length === 0 || executeMutation.isPending}
-              className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
             >
               {executeMutation.isPending ? (
                 <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                   Searching...
                 </>
               ) : (
                 <>
-                  <Search className="w-5 h-5" />
+                  <Play className="mr-2 h-5 w-5" />
                   Start Search
                 </>
               )}
-            </button>
-
-            {executeMutation.error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg text-sm">
-                {executeMutation.error.message}
-              </div>
-            )}
+            </Button>
 
             {executeMutation.data && (
-              <div className="bg-green-50 border border-green-200 text-green-700 p-3 rounded-lg text-sm">
-                Search completed! Found {executeMutation.data.total_kept} prospects.
-              </div>
+              <Card className="bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800">
+                <CardContent className="pt-4">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-green-600 dark:text-green-400">
+                      {executeMutation.data.total_kept}
+                    </div>
+                    <div className="text-sm text-green-600 dark:text-green-400">
+                      prospects found
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             )}
           </div>
-
-          {/* Right Column - Results */}
-          <div className="lg:col-span-2">
-            <div className="bg-white rounded-lg border border-gray-200">
-              <div className="p-4 border-b border-gray-200">
-                <h2 className="font-semibold text-gray-900">
-                  Prospects ({prospects.length})
-                </h2>
-              </div>
-
-              {prospectsLoading ? (
-                <div className="p-8 text-center text-gray-500">
-                  <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
-                  Loading prospects...
-                </div>
-              ) : prospects.length === 0 ? (
-                <div className="p-8 text-center text-gray-500">
-                  No prospects found. Run a search to discover new prospects.
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Name</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">ICP</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Role</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Location</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Score</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Confidence</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Intent</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Link</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      {prospects.map((prospect: Prospect) => (
-                        <tr key={prospect.id} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                            {prospect.full_name || 'Unknown'}
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                              {prospect.icp || '-'}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600">
-                            {prospect.role_detected || '-'}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600">
-                            {[prospect.geo_city, prospect.geo_state].filter(Boolean).join(', ') || '-'}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-900 font-medium">
-                            {prospect.icp_match_score ?? '-'}
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getConfidenceBadgeColor(prospect.icp_confidence)}`}>
-                              {prospect.icp_confidence || '-'}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getIntentHeatBadgeColor(prospect.intent_heat)}`}>
-                              {prospect.intent_heat || '-'}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            {prospect.linkedin_url && (
-                              <a
-                                href={prospect.linkedin_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-blue-600 hover:text-blue-800"
-                              >
-                                <ExternalLink className="w-4 h-4" />
-                              </a>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
         </div>
+
+        {/* Results Table */}
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <span>Prospects ({prospects.length})</span>
+              {prospectsLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {prospects.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No prospects found. Run a search to discover new prospects.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Name</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">ICP</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Role</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Location</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Score</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Confidence</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Intent</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Link</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {prospects.map((prospect: Prospect) => (
+                      <tr key={prospect.id} className="hover:bg-muted/50">
+                        <td className="px-4 py-3 text-sm font-medium">
+                          {prospect.full_name || 'Unknown'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <Badge variant="outline" className="gap-1">
+                            {prospect.icp || '-'}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground">
+                          {prospect.role_detected || '-'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground">
+                          {[prospect.geo_city, prospect.geo_state].filter(Boolean).join(', ') || '-'}
+                        </td>
+                        <td className="px-4 py-3 text-sm font-medium">
+                          {prospect.icp_match_score ?? '-'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <Badge variant={getConfidenceBadgeVariant(prospect.icp_confidence)}>
+                            {prospect.icp_confidence || '-'}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <div className={`w-2 h-2 rounded-full ${getIntentHeatColor(prospect.intent_heat)}`} />
+                            <span className="text-sm">{prospect.intent_heat || '-'}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          {prospect.linkedin_url && (
+                            <a
+                              href={prospect.linkedin_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-800"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                            </a>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
-    </div>
+    </TooltipProvider>
   );
 }
