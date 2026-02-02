@@ -230,7 +230,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           // Check for existing prospect
           const existing = await sql`
             SELECT id, times_seen, first_seen_at
-            FROM people_prospects
+            FROM rei_prospects.people_prospects
             WHERE workspace_id = ${workspace_id}::uuid
               AND linkedin_url_canonical = ${linkedinUrlCanonical}
             LIMIT 1
@@ -250,7 +250,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             }
 
             await sql`
-              UPDATE people_prospects
+              UPDATE rei_prospects.people_prospects
               SET times_seen = ${timesSeen},
                   intent_heat = ${intentHeat},
                   icp_match_score = ${score},
@@ -260,7 +260,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           } else {
             // Insert new prospect
             await sql`
-              INSERT INTO people_prospects (
+              INSERT INTO rei_prospects.people_prospects (
                 workspace_id, full_name, linkedin_url, linkedin_url_canonical,
                 icp, role_detected, icp_match_score, icp_confidence, intent_heat,
                 source_url, geo_state, geo_city, times_seen, first_seen_at

@@ -18,7 +18,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         id, full_name, linkedin_url, linkedin_url_canonical,
         icp, role_detected, icp_match_score, icp_confidence, intent_heat,
         source_url, geo_state, geo_city, times_seen, created_at
-      FROM people_prospects
+      FROM rei_prospects.people_prospects
       WHERE workspace_id = ${DEFAULT_WORKSPACE_ID}::uuid
       ORDER BY created_at DESC
       LIMIT 500

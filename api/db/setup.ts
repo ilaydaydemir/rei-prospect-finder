@@ -3,6 +3,8 @@ import { neon } from '@neondatabase/serverless';
 
 const sql = neon(process.env.DATABASE_URL!);
 
+const SCHEMA = 'rei_prospects';
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Check for setup key to prevent unauthorized access
   const setupKey = req.headers['x-setup-key'];
@@ -15,9 +17,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
+    // Create schema
+    await sql`CREATE SCHEMA IF NOT EXISTS rei_prospects`;
+
     // Create workspaces table
     await sql`
-      CREATE TABLE IF NOT EXISTS workspaces (
+      CREATE TABLE IF NOT EXISTS rei_prospects.workspaces (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         name text NOT NULL,
         created_at timestamptz DEFAULT now()
@@ -26,16 +31,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Create default workspace
     await sql`
-      INSERT INTO workspaces (id, name)
+      INSERT INTO rei_prospects.workspaces (id, name)
       VALUES ('00000000-0000-0000-0000-000000000001'::uuid, 'Default Workspace')
       ON CONFLICT (id) DO NOTHING
     `;
 
     // Create people_prospects table
     await sql`
-      CREATE TABLE IF NOT EXISTS people_prospects (
+      CREATE TABLE IF NOT EXISTS rei_prospects.people_prospects (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-        workspace_id uuid NOT NULL REFERENCES workspaces(id),
+        workspace_id uuid NOT NULL REFERENCES rei_prospects.workspaces(id),
         full_name text,
         linkedin_url text,
         linkedin_url_canonical text,
@@ -56,29 +61,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Create indexes
     await sql`
       CREATE INDEX IF NOT EXISTS idx_people_prospects_workspace
-      ON people_prospects (workspace_id)
+      ON rei_prospects.people_prospects (workspace_id)
     `;
 
     await sql`
       CREATE INDEX IF NOT EXISTS idx_people_prospects_icp
-      ON people_prospects (workspace_id, icp)
+      ON rei_prospects.people_prospects (workspace_id, icp)
     `;
 
     await sql`
       CREATE INDEX IF NOT EXISTS idx_people_prospects_linkedin
-      ON people_prospects (workspace_id, linkedin_url_canonical)
+      ON rei_prospects.people_prospects (workspace_id, linkedin_url_canonical)
     `;
 
     await sql`
       CREATE INDEX IF NOT EXISTS idx_people_prospects_intent
-      ON people_prospects (workspace_id, intent_heat)
+      ON rei_prospects.people_prospects (workspace_id, intent_heat)
     `;
 
     // Create query_history table for future query rotation tracking
     await sql`
-      CREATE TABLE IF NOT EXISTS query_history (
+      CREATE TABLE IF NOT EXISTS rei_prospects.query_history (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-        workspace_id uuid NOT NULL REFERENCES workspaces(id),
+        workspace_id uuid NOT NULL REFERENCES rei_prospects.workspaces(id),
         fingerprint text NOT NULL,
         icp text NOT NULL,
         geo_state text,
@@ -96,7 +101,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({
       success: true,
       message: 'Database setup completed successfully',
-      tables: ['workspaces', 'people_prospects', 'query_history']
+      schema: SCHEMA,
+      tables: ['rei_prospects.workspaces', 'rei_prospects.people_prospects', 'rei_prospects.query_history']
     });
 
   } catch (error: any) {
