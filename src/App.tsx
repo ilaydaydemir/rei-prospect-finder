@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import { SidebarProvider } from '@/components/ui/sidebar';
+import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/AppSidebar';
 import Dashboard from './pages/Dashboard';
 import REIICPSearch from './pages/REIICPSearch';
@@ -21,16 +21,14 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <SidebarProvider>
-          <div className="flex min-h-screen w-full">
-            <AppSidebar />
-            <main className="flex-1 overflow-auto">
-              <Routes>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/search" element={<REIICPSearch />} />
-                <Route path="/prospects" element={<Prospects />} />
-              </Routes>
-            </main>
-          </div>
+          <AppSidebar />
+          <SidebarInset>
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/search" element={<REIICPSearch />} />
+              <Route path="/prospects" element={<Prospects />} />
+            </Routes>
+          </SidebarInset>
         </SidebarProvider>
         <Toaster position="top-right" />
       </BrowserRouter>
