@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Slider } from '@/components/ui/slider';
+// Slider removed - using Input for results per ICP
 import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -306,23 +306,20 @@ export default function REIICPSearch() {
                 <CardTitle className="text-lg">Results Per ICP</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="text-center">
-                  <span className="text-3xl font-bold">{resultsPerIcp}</span>
-                  <span className="text-muted-foreground ml-1">prospects</span>
+                <div className="space-y-2">
+                  <Input
+                    type="number"
+                    value={resultsPerIcp}
+                    onChange={e => setResultsPerIcp(Math.max(1, parseInt(e.target.value) || 1))}
+                    min={1}
+                    className="text-center text-lg font-semibold"
+                  />
+                  <p className="text-xs text-muted-foreground text-center">
+                    prospects per ICP
+                  </p>
                 </div>
-                <Slider
-                  value={[resultsPerIcp]}
-                  onValueChange={([v]) => setResultsPerIcp(v)}
-                  min={10}
-                  max={100}
-                  step={10}
-                />
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>10</span>
-                  <span>100</span>
-                </div>
-                <p className="text-xs text-muted-foreground text-center">
-                  Total: ~{selectedICPs.length * resultsPerIcp} prospects max
+                <p className="text-sm text-muted-foreground text-center border-t pt-3">
+                  Total: ~{(selectedICPs.length * resultsPerIcp).toLocaleString()} prospects max
                 </p>
               </CardContent>
             </Card>
