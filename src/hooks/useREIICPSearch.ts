@@ -1,5 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { REIICPType, REIStrategyId } from '../lib/rei-icp-config';
+import { toast } from 'sonner';
+import type { REIICPType, REIStrategyId, ConfidenceLevel, IntentHeat } from '@/lib/rei-icp-config';
+
+const DEFAULT_WORKSPACE_ID = '00000000-0000-0000-0000-000000000001';
+
+// ============ TYPES ============
 
 export interface REIICPExecuteParams {
   icps: REIICPType[];
@@ -9,21 +14,45 @@ export interface REIICPExecuteParams {
   results_per_icp: number;
 }
 
-export interface REIICPExecuteResponse {
+interface REIICPExecuteResponse {
   run_id: string;
   status: string;
-  lanes: {
-    icp: REIICPType;
-    status: string;
-    queries_executed: number;
-    results_found: number;
-    kept: number;
-    dropped: number;
-  }[];
-  total_kept: number;
-  total_dropped: number;
+  message: string;
+  inserted_count: number;
+  deduped_count: number;
+  rejected_count: number;
 }
 
+export interface REIICPProspect {
+  id: string;
+  full_name: string | null;
+  headline: string | null;
+  linkedin_url_canonical: string;
+  linkedin_url: string | null;
+  location: string | null;
+  geo_city: string | null;
+  geo_state: string | null;
+  icp: REIICPType;
+  role_detected: string | null;
+  icp_match_score: number;
+  icp_confidence: ConfidenceLevel;
+  intent_heat: IntentHeat;
+  times_seen: number;
+  first_seen_at: string;
+  last_seen_at: string;
+  source_run_id: string | null;
+  created_at: string;
+}
+
+export interface REIICPProspectFilters {
+  runId?: string;
+  icp?: REIICPType;
+  confidence?: ConfidenceLevel;
+  intentHeat?: IntentHeat;
+  state?: string;
+}
+
+// Legacy type for backwards compatibility
 export interface Prospect {
   id: string;
   full_name: string | null;
@@ -39,14 +68,7 @@ export interface Prospect {
   created_at: string;
 }
 
-export interface ProspectFilters {
-  icp?: REIICPType;
-  confidence?: string;
-  intentHeat?: string;
-  state?: string;
-}
-
-const DEFAULT_WORKSPACE_ID = '00000000-0000-0000-0000-000000000001';
+// ============ EXECUTE HOOK ============
 
 export function useREIICPExecute() {
   const queryClient = useQueryClient();
@@ -55,10 +77,16 @@ export function useREIICPExecute() {
     mutationFn: async (params: REIICPExecuteParams): Promise<REIICPExecuteResponse> => {
       const response = await fetch('/api/rei-icp-execute', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
           workspace_id: DEFAULT_WORKSPACE_ID,
-          ...params
+          icps: params.icps,
+          states: params.states,
+          city: params.city,
+          strategy: params.strategy,
+          results_per_icp: params.results_per_icp,
         }),
       });
 
@@ -69,28 +97,71 @@ export function useREIICPExecute() {
 
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      toast.success(`REI ICP search completed: ${data.message}`);
       queryClient.invalidateQueries({ queryKey: ['rei-icp-prospects'] });
-    }
+    },
+    onError: (error: Error) => {
+      toast.error(`Search failed: ${error.message}`);
+    },
   });
 }
 
-export function useREIICPProspects(filters: ProspectFilters = {}) {
-  const params = new URLSearchParams();
-  if (filters.icp) params.set('icp', filters.icp);
-  if (filters.confidence) params.set('confidence', filters.confidence);
-  if (filters.intentHeat) params.set('intentHeat', filters.intentHeat);
-  if (filters.state) params.set('state', filters.state);
+// ============ PROSPECTS QUERY HOOK ============
 
+export function useREIICPProspects(filters: REIICPProspectFilters = {}) {
   return useQuery({
     queryKey: ['rei-icp-prospects', filters],
-    queryFn: async (): Promise<Prospect[]> => {
+    queryFn: async (): Promise<REIICPProspect[]> => {
+      const params = new URLSearchParams();
+
+      if (filters.runId) params.set('runId', filters.runId);
+      if (filters.icp) params.set('icp', filters.icp);
+      if (filters.confidence) params.set('confidence', filters.confidence);
+      if (filters.intentHeat) params.set('intentHeat', filters.intentHeat);
+      if (filters.state) params.set('state', filters.state);
+
       const response = await fetch(`/api/prospects?${params.toString()}`);
+
       if (!response.ok) {
-        throw new Error('Failed to fetch prospects');
+        throw new Error(`Failed to fetch prospects: ${response.status}`);
       }
+
       const data = await response.json();
-      return data.prospects || [];
-    }
+      // Handle both array response and {prospects: []} response
+      return Array.isArray(data) ? data : (data.prospects || []);
+    },
+    enabled: true,
+    refetchInterval: filters.runId ? 5000 : false,
+  });
+}
+
+// ============ STATS HOOK ============
+
+export interface REIICPStats {
+  total: number;
+  byICP: Record<REIICPType, number>;
+  byConfidence: Record<ConfidenceLevel, number>;
+  byIntentHeat: Record<IntentHeat, number>;
+}
+
+export function useREIICPStats() {
+  return useQuery({
+    queryKey: ['rei-icp-stats'],
+    queryFn: async (): Promise<REIICPStats> => {
+      const response = await fetch('/api/prospects/stats');
+
+      if (!response.ok) {
+        // Return empty stats if endpoint doesn't exist yet
+        return {
+          total: 0,
+          byICP: { wholesaler: 0, flipper: 0, buy_hold: 0, agent: 0, institutional: 0 },
+          byConfidence: { high: 0, medium: 0, low: 0 },
+          byIntentHeat: { hot: 0, warm: 0, cold: 0 },
+        };
+      }
+
+      return response.json();
+    },
   });
 }

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useREIICPProspects, type Prospect } from "@/hooks/useREIICPSearch";
+import { useREIICPProspects, type REIICPProspect } from "@/hooks/useREIICPSearch";
 import { Search, ExternalLink, Download, Filter, Users, Loader2 } from "lucide-react";
 
 export default function Prospects() {
@@ -201,7 +201,7 @@ export default function Prospects() {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {filteredProspects.map((prospect: Prospect) => (
+                  {filteredProspects.map((prospect: REIICPProspect) => (
                     <tr key={prospect.id} className="hover:bg-muted/50">
                       <td className="px-4 py-3 text-sm font-medium">
                         {prospect.full_name || 'Unknown'}

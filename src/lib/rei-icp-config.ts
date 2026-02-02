@@ -2,6 +2,10 @@ export type REIICPType = 'wholesaler' | 'flipper' | 'buy_hold' | 'agent' | 'inst
 
 export type REIStrategyId = 'balanced' | 'role_focused' | 'fresh_sources' | 'aggressive_geo';
 
+export type ConfidenceLevel = 'high' | 'medium' | 'low';
+
+export type IntentHeat = 'cold' | 'warm' | 'hot';
+
 export interface ICPConfig {
   id: REIICPType;
   label: string;

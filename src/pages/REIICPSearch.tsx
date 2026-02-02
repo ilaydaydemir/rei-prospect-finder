@@ -1,177 +1,140 @@
 import { useState } from 'react';
-import { Target, Play, Loader2, Users, Building2, Home, Landmark, Briefcase, ExternalLink, Info } from 'lucide-react';
+import { Target, Play, Loader2, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-// Select components available if needed
-// import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-// Slider removed - using Input for results per ICP
-import { Switch } from '@/components/ui/switch';
-import { Checkbox } from '@/components/ui/checkbox';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { Slider } from '@/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
-import { REI_ICP_CONFIG, REI_STRATEGIES, US_STATES, type REIICPType, type REIStrategyId } from '@/lib/rei-icp-config';
-import { useREIICPExecute, useREIICPProspects, type Prospect } from '@/hooks/useREIICPSearch';
-import { toast } from 'sonner';
+import { ICPSelector } from '@/components/rei-icp/ICPSelector';
+import { ICPProgressPanel, type LaneProgress } from '@/components/rei-icp/ICPProgressPanel';
+import { ICPResultsTable, type ICPProspect } from '@/components/rei-icp/ICPResultsTable';
+import { useREIICPExecute, useREIICPProspects } from '@/hooks/useREIICPSearch';
+import { REI_ICP_CONFIG, US_STATES, type REIICPType, type REIStrategyId } from '@/lib/rei-icp-config';
 
-const ICP_ICONS: Record<REIICPType, typeof Users> = {
-  wholesaler: Briefcase,
-  flipper: Home,
-  buy_hold: Building2,
-  agent: Users,
-  institutional: Landmark
-};
-
-// ICP colors for future use
-// const ICP_COLORS: Record<REIICPType, string> = {
-//   wholesaler: 'bg-blue-500', flipper: 'bg-orange-500',
-//   buy_hold: 'bg-green-500', agent: 'bg-purple-500', institutional: 'bg-amber-500'
-// };
+const STRATEGY_OPTIONS: { id: REIStrategyId; name: string; description: string }[] = [
+  { id: 'balanced', name: 'Balanced', description: 'Default mix of all query types' },
+  { id: 'role_focused', name: 'Role Focused', description: 'Emphasize job titles and executive roles' },
+  { id: 'aggressive_geo', name: 'Aggressive Geo', description: 'Deep city and suburb-level coverage' },
+  { id: 'fresh_sources', name: 'Fresh Sources', description: 'More neutral queries to find new profiles' },
+];
 
 export default function REIICPSearch() {
-  const [selectedICPs, setSelectedICPs] = useState<REIICPType[]>([]);
+  const { mutate: executeSearch, isPending } = useREIICPExecute();
+
+  // Form state
+  const [selectedICPs, setSelectedICPs] = useState<REIICPType[]>(['wholesaler']);
   const [batchMode, setBatchMode] = useState(false);
   const [selectedStates, setSelectedStates] = useState<string[]>([]);
   const [city, setCity] = useState('');
   const [strategy, setStrategy] = useState<REIStrategyId>('balanced');
-  const [resultsPerIcp, setResultsPerIcp] = useState(50);
+  const [resultsPerICP, setResultsPerICP] = useState(100);
 
-  const executeMutation = useREIICPExecute();
-  const { data: prospects = [], isLoading: prospectsLoading, refetch } = useREIICPProspects();
+  // Results state
+  const [currentRunId, setCurrentRunId] = useState<string | null>(null);
+  const [laneProgress, setLaneProgress] = useState<LaneProgress[]>([]);
 
-  const handleICPToggle = (icp: REIICPType) => {
-    if (batchMode) return;
-    setSelectedICPs(prev =>
-      prev.includes(icp) ? prev.filter(i => i !== icp) : [...prev, icp]
-    );
-  };
+  // Fetch prospects for the current run
+  const { data: prospects = [], isLoading: prospectsLoading } = useREIICPProspects({
+    runId: currentRunId || undefined,
+  });
 
-  const handleBatchToggle = () => {
-    setBatchMode(!batchMode);
-    if (!batchMode) {
-      setSelectedICPs(Object.keys(REI_ICP_CONFIG) as REIICPType[]);
-    } else {
-      setSelectedICPs([]);
-    }
-  };
-
+  // State toggle helper
   const toggleState = (state: string) => {
     setSelectedStates(prev =>
-      prev.includes(state) ? prev.filter(s => s !== state) : [...prev, state]
+      prev.includes(state)
+        ? prev.filter(s => s !== state)
+        : [...prev, state]
     );
   };
 
-  const handleSearch = () => {
+  const handleStartSearch = () => {
     if (selectedICPs.length === 0 || selectedStates.length === 0) {
-      toast.error('Please select at least one ICP and one state');
       return;
     }
 
-    executeMutation.mutate({
-      icps: selectedICPs,
-      states: selectedStates,
-      city: city || undefined,
-      strategy,
-      results_per_icp: resultsPerIcp
-    }, {
-      onSuccess: (data) => {
-        toast.success(`Search completed! Found ${data.total_kept} prospects.`);
-        refetch();
+    // Initialize lane progress
+    const initialProgress: LaneProgress[] = selectedICPs.map(icp => ({
+      icp,
+      status: 'pending',
+      queries_total: 80,
+      queries_completed: 0,
+      results_found: 0,
+      results_kept: 0,
+      results_dropped: 0,
+    }));
+    setLaneProgress(initialProgress);
+
+    executeSearch(
+      {
+        icps: selectedICPs,
+        states: selectedStates,
+        city: city || undefined,
+        strategy,
+        results_per_icp: resultsPerICP,
       },
-      onError: (error) => {
-        toast.error(error.message || 'Search failed');
+      {
+        onSuccess: (data) => {
+          setCurrentRunId(data.run_id);
+          // Update lane statuses to completed
+          setLaneProgress(prev =>
+            prev.map(lane => ({
+              ...lane,
+              status: 'completed',
+              results_kept: Math.floor(data.inserted_count / prev.length),
+              results_dropped: Math.floor(data.rejected_count / prev.length),
+              queries_completed: lane.queries_total
+            }))
+          );
+        },
+        onError: (error) => {
+          // Mark all lanes as failed
+          setLaneProgress(prev =>
+            prev.map(lane => ({ ...lane, status: 'failed', error: error.message }))
+          );
+        },
       }
-    });
+    );
   };
 
-  const getConfidenceBadgeVariant = (confidence: string | null) => {
-    switch (confidence) {
-      case 'high': return 'default';
-      case 'medium': return 'secondary';
-      case 'low': return 'outline';
-      default: return 'outline';
-    }
-  };
-
-  const getIntentHeatColor = (heat: string | null) => {
-    switch (heat) {
-      case 'hot': return 'bg-red-500';
-      case 'warm': return 'bg-orange-500';
-      case 'cold': return 'bg-blue-500';
-      default: return 'bg-gray-500';
-    }
-  };
+  const canStartSearch = selectedICPs.length > 0 && selectedStates.length > 0;
 
   return (
     <TooltipProvider>
-      <div className="container mx-auto p-6 max-w-6xl">
+      <div className="container mx-auto p-6 max-w-5xl">
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-3xl font-bold flex items-center gap-3">
-            <Target className="h-8 w-8 text-blue-500" />
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <Target className="h-6 w-6 text-blue-500" />
             REI ICP Prospect Search
           </h1>
           <p className="text-muted-foreground mt-1">
-            Find real estate investor prospects by ICP type using AI-powered search
+            Find real estate investor prospects by ICP type - Wholesalers, Flippers, Buy & Hold, Agents, Institutional
           </p>
         </div>
 
         <div className="grid gap-6 lg:grid-cols-3">
-          {/* Left Column - Main Controls */}
+          {/* Main Form - Left Column */}
           <div className="lg:col-span-2 space-y-6">
             {/* ICP Selection */}
-            <Card className="border-blue-200 dark:border-blue-800">
+            <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
                   <Target className="h-5 w-5 text-blue-500" />
                   Select ICPs
                 </CardTitle>
                 <CardDescription>
-                  Choose which Ideal Customer Profiles to search for
+                  Choose one or more Ideal Customer Profiles to target
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center space-x-2">
-                    <Switch
-                      id="batch-mode"
-                      checked={batchMode}
-                      onCheckedChange={handleBatchToggle}
-                    />
-                    <Label htmlFor="batch-mode">Batch Mode (All 5 ICPs)</Label>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {(Object.entries(REI_ICP_CONFIG) as [REIICPType, typeof REI_ICP_CONFIG.wholesaler][]).map(([id, config]) => {
-                    const Icon = ICP_ICONS[id];
-                    const isSelected = selectedICPs.includes(id);
-                    return (
-                      <Button
-                        key={id}
-                        variant={isSelected ? 'default' : 'outline'}
-                        className={`h-auto py-3 flex-col gap-1 ${batchMode ? 'opacity-50 cursor-not-allowed' : ''}`}
-                        onClick={() => handleICPToggle(id)}
-                        disabled={batchMode}
-                      >
-                        <Icon className="h-5 w-5" />
-                        <span className="text-sm font-medium">{config.label}</span>
-                      </Button>
-                    );
-                  })}
-                </div>
-
-                {selectedICPs.length > 0 && (
-                  <div className="flex flex-wrap gap-2 pt-2">
-                    {selectedICPs.map(icp => (
-                      <Badge key={icp} variant="secondary" className="gap-1">
-                        {REI_ICP_CONFIG[icp].label}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
+              <CardContent>
+                <ICPSelector
+                  selectedICPs={selectedICPs}
+                  onSelect={setSelectedICPs}
+                  batchMode={batchMode}
+                  onBatchModeChange={setBatchMode}
+                />
               </CardContent>
             </Card>
 
@@ -180,267 +143,271 @@ export default function REIICPSearch() {
               <CardHeader>
                 <CardTitle className="text-lg">Geographic Scope</CardTitle>
                 <CardDescription>
-                  Select states and optionally specify a city
+                  Select states to search (required)
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                {/* State Selection */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm text-muted-foreground">
+                    <Label>
                       States ({selectedStates.length} selected)
                     </Label>
-                    {selectedStates.length > 0 && (
+                    <div className="flex gap-2">
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => setSelectedStates([])}
+                        onClick={() => setSelectedStates([...US_STATES])}
                         className="text-xs h-6"
                       >
-                        Clear all
+                        Select All
                       </Button>
-                    )}
-                  </div>
-                  <ScrollArea className="h-40 rounded-md border p-2">
-                    <div className="flex flex-wrap gap-1.5">
-                      {US_STATES.map(state => (
+                      {selectedStates.length > 0 && (
                         <Button
-                          key={state}
-                          variant={selectedStates.includes(state) ? 'default' : 'outline'}
+                          variant="ghost"
                           size="sm"
-                          className="h-7 text-xs"
-                          onClick={() => toggleState(state)}
+                          onClick={() => setSelectedStates([])}
+                          className="text-xs h-6"
                         >
-                          {state}
+                          Clear all
                         </Button>
-                      ))}
+                      )}
                     </div>
-                  </ScrollArea>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto p-2 border rounded-md bg-muted/30">
+                    {US_STATES.map(state => (
+                      <Button
+                        key={state}
+                        variant={selectedStates.includes(state) ? 'default' : 'outline'}
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => toggleState(state)}
+                      >
+                        {state}
+                      </Button>
+                    ))}
+                  </div>
                 </div>
 
+                {/* Optional City */}
                 <div className="space-y-2">
-                  <Label>City (Optional)</Label>
+                  <Label>City (optional)</Label>
                   <Input
                     value={city}
-                    onChange={e => setCity(e.target.value)}
-                    placeholder="e.g., Houston, Dallas, Austin"
+                    onChange={(e) => setCity(e.target.value)}
+                    placeholder="e.g., Houston, Miami, Phoenix"
                   />
                   <p className="text-xs text-muted-foreground">
-                    Adding a city narrows down the search to that specific area
+                    Specify a city to focus search queries on that metro area
                   </p>
                 </div>
               </CardContent>
             </Card>
 
-            {/* Search Strategy */}
+            {/* Search Configuration */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  Search Strategy
-                  <Tooltip>
-                    <TooltipTrigger>
-                      <Info className="h-4 w-4 text-muted-foreground" />
-                    </TooltipTrigger>
-                    <TooltipContent className="max-w-xs">
-                      <p>Different strategies optimize for different goals - coverage, precision, or fresh results.</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </CardTitle>
+                <CardTitle className="text-lg">Search Configuration</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid gap-3">
-                  {REI_STRATEGIES.map(s => (
-                    <div
-                      key={s.id}
-                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                        strategy === s.id
-                          ? 'bg-primary/5 border-primary'
-                          : 'hover:bg-muted/50'
-                      }`}
-                      onClick={() => setStrategy(s.id)}
-                    >
-                      <Checkbox
-                        checked={strategy === s.id}
-                        className="mt-0.5"
-                      />
-                      <div>
-                        <div className="font-medium">{s.label}</div>
-                        <div className="text-sm text-muted-foreground">{s.description}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Right Column - Summary & Actions */}
-          <div className="space-y-6">
-            {/* Search Summary */}
-            <Card className="bg-muted/30">
-              <CardHeader>
-                <CardTitle className="text-lg">Search Summary</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">ICPs Selected</span>
-                  <span className="font-medium">{selectedICPs.length}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">States</span>
-                  <span className="font-medium">{selectedStates.length}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">City Filter</span>
-                  <span className="font-medium">{city || 'None'}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Strategy</span>
-                  <span className="font-medium">{REI_STRATEGIES.find(s => s.id === strategy)?.label}</span>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Results Per ICP */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Results Per ICP</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
+                {/* Strategy */}
                 <div className="space-y-2">
-                  <Input
-                    type="number"
-                    value={resultsPerIcp}
-                    onChange={e => setResultsPerIcp(Math.max(1, parseInt(e.target.value) || 1))}
-                    min={1}
-                    className="text-center text-lg font-semibold"
-                  />
-                  <p className="text-xs text-muted-foreground text-center">
-                    prospects per ICP
-                  </p>
+                  <Label className="flex items-center gap-2">
+                    Query Strategy
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Info className="h-4 w-4 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs">
+                        <p>Different strategies generate different query patterns to optimize for coverage vs precision.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </Label>
+                  <Select value={strategy} onValueChange={(v) => setStrategy(v as REIStrategyId)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {STRATEGY_OPTIONS.map(opt => (
+                        <SelectItem key={opt.id} value={opt.id}>
+                          <div>
+                            <div className="font-medium">{opt.name}</div>
+                            <div className="text-xs text-muted-foreground">{opt.description}</div>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-                <p className="text-sm text-muted-foreground text-center border-t pt-3">
-                  Total: ~{(selectedICPs.length * resultsPerIcp).toLocaleString()} prospects max
-                </p>
+
+                {/* Results per ICP */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Results per ICP</Label>
+                    <Input
+                      type="number"
+                      min={10}
+                      max={2000}
+                      value={resultsPerICP}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        if (!isNaN(val)) {
+                          setResultsPerICP(Math.min(2000, Math.max(10, val)));
+                        }
+                      }}
+                      className="w-24 h-8 text-right"
+                    />
+                  </div>
+                  <Slider
+                    value={[resultsPerICP]}
+                    onValueChange={([v]) => setResultsPerICP(v)}
+                    min={10}
+                    max={2000}
+                    step={50}
+                  />
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>10</span>
+                    <span>2000</span>
+                  </div>
+                </div>
               </CardContent>
             </Card>
 
-            {/* Start Search Button */}
-            <Button
-              size="lg"
-              className="w-full"
-              onClick={handleSearch}
-              disabled={selectedICPs.length === 0 || selectedStates.length === 0 || executeMutation.isPending}
-            >
-              {executeMutation.isPending ? (
-                <>
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                  Searching...
-                </>
-              ) : (
-                <>
-                  <Play className="mr-2 h-5 w-5" />
-                  Start Search
-                </>
-              )}
-            </Button>
+            {/* Progress Panel (shown when running) */}
+            {laneProgress.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Search Progress</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ICPProgressPanel
+                    lanes={laneProgress}
+                    isRunning={isPending}
+                  />
+                </CardContent>
+              </Card>
+            )}
 
-            {executeMutation.data && (
-              <Card className="bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800">
-                <CardContent className="pt-4">
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-green-600 dark:text-green-400">
-                      {executeMutation.data.total_kept}
-                    </div>
-                    <div className="text-sm text-green-600 dark:text-green-400">
-                      prospects found
-                    </div>
-                  </div>
+            {/* Results Table (shown when we have results) */}
+            {(prospects.length > 0 || currentRunId) && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Results</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ICPResultsTable
+                    prospects={prospects as ICPProspect[]}
+                    isLoading={prospectsLoading}
+                  />
                 </CardContent>
               </Card>
             )}
           </div>
-        </div>
 
-        {/* Results Table */}
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <span>Prospects ({prospects.length})</span>
-              {prospectsLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {prospects.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>No prospects found. Run a search to discover new prospects.</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Name</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">ICP</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Role</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Location</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Score</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Confidence</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Intent</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Link</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {prospects.map((prospect: Prospect) => (
-                      <tr key={prospect.id} className="hover:bg-muted/50">
-                        <td className="px-4 py-3 text-sm font-medium">
-                          {prospect.full_name || 'Unknown'}
-                        </td>
-                        <td className="px-4 py-3">
-                          <Badge variant="outline" className="gap-1">
-                            {prospect.icp || '-'}
-                          </Badge>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-muted-foreground">
-                          {prospect.role_detected || '-'}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-muted-foreground">
-                          {[prospect.geo_city, prospect.geo_state].filter(Boolean).join(', ') || '-'}
-                        </td>
-                        <td className="px-4 py-3 text-sm font-medium">
-                          {prospect.icp_match_score ?? '-'}
-                        </td>
-                        <td className="px-4 py-3">
-                          <Badge variant={getConfidenceBadgeVariant(prospect.icp_confidence)}>
-                            {prospect.icp_confidence || '-'}
-                          </Badge>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <div className={`w-2 h-2 rounded-full ${getIntentHeatColor(prospect.intent_heat)}`} />
-                            <span className="text-sm">{prospect.intent_heat || '-'}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          {prospect.linkedin_url && (
-                            <a
-                              href={prospect.linkedin_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-600 hover:text-blue-800"
-                            >
-                              <ExternalLink className="h-4 w-4" />
-                            </a>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+          {/* Sidebar - Right Column */}
+          <div className="space-y-4">
+            {/* Summary Card */}
+            <Card className="bg-muted/30">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Search Summary</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">ICPs</span>
+                  <span className="font-medium">
+                    {selectedICPs.length === 0
+                      ? 'None selected'
+                      : batchMode
+                      ? `${selectedICPs.length} ICPs (batch)`
+                      : REI_ICP_CONFIG[selectedICPs[0]].label}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">States</span>
+                  <span className="font-medium">
+                    {selectedStates.length === 0
+                      ? 'None selected'
+                      : selectedStates.length > 3
+                      ? `${selectedStates.length} states`
+                      : selectedStates.join(', ')}
+                  </span>
+                </div>
+                {city && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">City</span>
+                    <span className="font-medium">{city}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Strategy</span>
+                  <span className="font-medium">
+                    {STRATEGY_OPTIONS.find(s => s.id === strategy)?.name}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Results/ICP</span>
+                  <span className="font-medium">{resultsPerICP}</span>
+                </div>
+                <div className="flex justify-between border-t pt-2 mt-2">
+                  <span className="text-muted-foreground">Est. Total</span>
+                  <span className="font-medium">
+                    ~{(selectedICPs.length * resultsPerICP).toLocaleString()} prospects
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Scoring Info Card */}
+            <Card className="bg-muted/30">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-1">
+                  <Info className="h-4 w-4" />
+                  Scoring Rules
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-xs text-muted-foreground space-y-1">
+                <p>+2 Keyword match</p>
+                <p>+2 Role/title match</p>
+                <p>+1 Geographic match</p>
+                <p>-3 Coaching/course penalty</p>
+                <p>-2 Wrong industry penalty</p>
+                <div className="border-t pt-1 mt-1">
+                  <p>Score 4+ = High confidence</p>
+                  <p>Score 2-3 = Medium confidence</p>
+                  <p>Score 1 = Dropped</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Start Button */}
+            <Button
+              className="w-full"
+              size="lg"
+              onClick={handleStartSearch}
+              disabled={isPending || !canStartSearch}
+            >
+              {isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Searching...
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4 mr-2" />
+                  Start ICP Search
+                </>
+              )}
+            </Button>
+
+            {!canStartSearch && (
+              <p className="text-sm text-destructive text-center">
+                {selectedICPs.length === 0
+                  ? 'Select at least one ICP'
+                  : 'Select at least one state'}
+              </p>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
     </TooltipProvider>
   );
